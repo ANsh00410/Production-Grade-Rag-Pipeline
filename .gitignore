@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Env / secrets
+.env
+.env.local
+
+# Qdrant local storage (if run outside Docker)
+qdrant_storage/
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
