@@ -94,3 +94,38 @@ def upsert_chunks(chunks: list[Chunk], batch_size: int = 32):
 
         client.upsert(collection_name=settings.collection_name, points=points)
         print(f"  upserted batch {i // batch_size + 1} ({len(points)} points)")
+
+
+def get_collection_info() -> dict:
+    """
+    Returns total chunk count and a deduplicated list of source files
+    currently stored in Qdrant. Used by the GET /collections API endpoint.
+    """
+    client = get_client()
+
+    if not client.collection_exists(settings.collection_name):
+        return {"chunk_count": 0, "sources": []}
+
+    # Total number of points (chunks) in the collection
+    info = client.get_collection(settings.collection_name)
+    chunk_count = info.points_count
+
+    # Scroll through all payloads to collect unique source_file values.
+    # scroll() returns batches; we paginate until offset is None.
+    sources: set[str] = set()
+    offset = None
+    while True:
+        results, offset = client.scroll(
+            collection_name=settings.collection_name,
+            with_payload=["source_file"],
+            limit=256,
+            offset=offset,
+        )
+        for point in results:
+            src = (point.payload or {}).get("source_file")
+            if src:
+                sources.add(src)
+        if offset is None:
+            break
+
+    return {"chunk_count": chunk_count, "sources": sorted(sources)}

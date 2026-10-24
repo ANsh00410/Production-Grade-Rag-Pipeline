@@ -8,13 +8,18 @@ venv/
 
 # Env / secrets
 .env
-.env.local
+.env.*
+!.env.example
 
 # Qdrant local storage (if run outside Docker)
 qdrant_storage/
 
 # OS
 .DS_Store
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
 
 # IDE
 .vscode/

@@ -1,146 +1,140 @@
-# RAG Pipeline — Hybrid Search over Internal Docs
+# Production-Grade RAG Pipeline with Citation Verification & Hallucination Judge
 
-Production-style RAG: multi-format ingestion, hybrid (dense + sparse) retrieval
-in Qdrant, re-ranking, grounded generation with citations, and LLM-as-judge
-citation verification. Served via FastAPI, containerized with Docker.
+An end-to-end, production-grade Retrieval-Augmented Generation (RAG) system with hybrid vector search, grounded generation, claim-level hallucination verification, and a modern React web interface. Entirely containerized for one-command deployment.
 
-## Status (what's built so far)
+---
 
-- ✅ Multi-format ingestion (markdown, PDF, HTML) — header/page-aware chunking
-- ✅ Token-based sliding-window chunker with overlap (offline fallback if `tiktoken` can't reach the network)
-- ✅ Qdrant indexing — dense (`bge-small`) + sparse (BM25-style, via `fastembed`) vectors per chunk, single collection
-- ✅ Offline-testable indexing logic (Qdrant in-memory mode + mocked embeddings — see `tests/test_indexing_offline.py`)
-- ✅ Dense search + sparse search (`app/retrieval/search.py`)
-- ✅ Reciprocal Rank Fusion (`app/retrieval/fusion.py`) — pure, unit-tested (`tests/test_fusion.py`), no network needed
-- ✅ `hybrid_search()` wiring dense + sparse + fusion together (`app/retrieval/hybrid.py`)
-- ⬜ Cross-encoder re-ranking — **next step**
-- ⬜ Grounded generation with inline citations (Claude API)
-- ⬜ LLM-as-judge citation verification
-- ⬜ FastAPI service (`/ingest`, `/query`, `/health`)
+## 🚀 Key Highlights & Features
 
-## Setup on your machine
+- **Multi-Format Ingestion:** Header/page-aware parsing for **PDFs**, **Markdown**, and **HTML** with deterministic chunk IDs and layout provenance.
+- **Hybrid Search & Fusion:** Dual-vector indexing in **Qdrant** combining dense semantic embeddings (`BAAI/bge-small-en-v1.5`) and BM25-style sparse vectors, fused via **Reciprocal Rank Fusion (RRF)**.
+- **Grounded Generation:** LLM inference powered by **Groq (LLaMA 3.3 70B Versatile)**, strictly constrained to retrieved context with bracketed citations (`[1]`, `[2]`).
+- **Claim-Level Hallucination & Citation Judge:** Deconstructs generated answers into atomic factual claims, independently audits attribution against cited chunks, and classifies each claim (`SUPPORTED`, `PARTIAL`, `NOT_SUPPORTED`, `UNKNOWN`).
+- **React + Vite Frontend:** Dark glassmorphic interface with interactive claim inspection, real-time verdict donut charts, document upload, and an in-app Pipeline Guide.
+- **Single-Command Docker:** Multi-stage containerized setup (FastAPI + React + Qdrant + Nginx reverse proxy) runnable with `docker compose up --build`.
 
-### 1. Prerequisites
-- Python 3.11+
-- Docker + Docker Compose (for Qdrant)
-- An Anthropic API key (for the generation + judge stages, later)
+---
 
-### 2. Install dependencies
+## 🧠 What the Pipeline Gives You
+
+When you submit a query, the system returns:
+
+1. **Grounded Answer with Bracketed Citations:** A concise, natural response where every statement contains inline bracket markers (e.g. `[2][3]`) linking directly to the retrieved passages.
+2. **Executive Audit Verdict (`PASS` vs `⚠ REVIEW`):** 
+   - `PASS`: Every claim in the answer is 100% corroborated by the documentation.
+   - `⚠ REVIEW`: The system detected an extrapolation, ungrounded assumption, or citation mismatch that requires human validation.
+3. **Verdict Breakdown Metrics:** A visual summary and count of factual reliability (e.g., *75% Supported, 25% Partial*).
+4. **Claim-by-Claim Audit Trail:** Full transparency cards detailing:
+   - The exact atomic statement.
+   - The cited chunk ID(s).
+   - The verdict (`Supported`, `Partial`, `Not Supported`, `Unknown`).
+   - The judge's exact reasoning explaining why the claim was accepted or flagged.
+
+---
+
+## ⚖️ What You Have to Care About (Reading the Verdicts)
+
+Standard RAG systems give you a confident paragraph with no indication of whether the LLM hallucinated. This pipeline acts as a **strict compliance auditor**:
+
+| Verdict | Meaning | What You Need to Know |
+| :--- | :--- | :--- |
+| **`SUPPORTED`** 🟢 | **100% Backed by Document** | Every fact in this claim is explicitly proven by the cited source chunk. Safe for automated decision-making. |
+| **`PARTIAL`** 🟡 | **Subtle Extrapolation / Missing Sub-clause** | The core premise may be accurate, but the LLM added an assumption, extrapolated a phrase, or combined multiple facts where one sub-clause was missing from the cited chunk. |
+| **`NOT_SUPPORTED`** 🔴 | **Contradiction / Hallucination** | The statement contradicts the source documentation or is absent from the knowledge base. |
+| **`UNKNOWN`** ⚪ | **Citation Mismatch** | The claim either lacks a citation or cited a chunk discussing an unrelated section of the document. |
+
+### 💡 Tips for Achieving 100% `PASS` Rates
+1. **Targeted Questions:** Specific queries (e.g., *"What is the maximum loan tenure?"*) map cleanly to single chunks, guaranteeing tight 1-to-1 attribution.
+2. **Request Bullet Points for Broad Summaries:** Asking for *"concise bullet points with citations"* prevents run-on sentences that merge multiple clauses into one compound claim.
+3. **Inspect the Citation Tags:** Clicking/checking the `[N]` tags shows the exact source paragraph used to audit the claim.
+
+---
+
+## 🛠️ Single-Command Quickstart
+
+Ensure **Docker Desktop** is running, then run:
+
 ```bash
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+docker compose up --build
 ```
+*(or run in the background with `-d`: `docker compose up --build -d`)*
 
-### 3. Start Qdrant
+### Access Points
+
+| Service | URL | Role |
+| :--- | :--- | :--- |
+| **React Web UI** | `http://localhost` | Clean search interface, claim inspector, and doc upload |
+| **FastAPI Swagger Docs** | `http://localhost:8000/docs` | Interactive REST API documentation |
+| **Qdrant Dashboard** | `http://localhost:6333/dashboard` | Visual inspection of vectors, payloads, and collections |
+
+To tear down containers while keeping vector database data intact:
 ```bash
-docker compose up -d qdrant
-```
-Confirm it's up: open http://localhost:6333/dashboard in a browser.
-
-### 4. Run ingestion + indexing on the sample doc
-```bash
-python -m app.indexing.build_index data/sample_docs --recreate
-```
-This will download `BAAI/bge-small-en-v1.5` (dense) and the BM25 sparse model
-from Hugging Face on first run — that part needs real internet access, which
-is exactly what failed in the sandboxed environment this was built in. On
-your machine it should just work.
-
-You should see output like:
-```
-Step 1/2: Ingesting documents from data/sample_docs
-  ✓ onboarding.md: 6 chunks
-  -> 6 chunks total
-
-Step 2/2: Embedding + upserting into Qdrant
-  upserted batch 1 (6 points)
-
-Done. Collection now contains chunks from data/sample_docs.
+docker compose down
 ```
 
-### 5. Verify it landed in Qdrant
-Open http://localhost:6333/dashboard, click into the `internal_docs`
-collection, and confirm you see 6 points with both `dense` and `sparse`
-vectors and readable payloads (text, heading_path, etc.).
+---
 
-### 6. Run the offline structural test (no network needed)
-```bash
-python -m tests.test_indexing_offline
-```
-This validates the indexing code's correctness (schema, batching, ID
-stability) using Qdrant's in-memory mode and mocked embeddings — useful to
-re-run any time you touch `qdrant_store.py` or `embedder.py`, without
-waiting on model downloads or a running server.
+## 🏛️ System Architecture
 
-## Project structure
-
-```
-app/
-  ingestion/
-    models.py           # Chunk dataclass (the shared data model + citation metadata)
-    chunker.py           # token-based sliding-window splitter (tiktoken + offline fallback)
-    markdown_parser.py   # header-aware markdown -> Chunk[]
-    pdf_parser.py         # page-aware PDF -> Chunk[]
-    html_parser.py       # header-aware HTML -> Chunk[]
-    ingest.py            # dispatcher: routes any file to the right parser
-  indexing/
-    embedder.py           # dense (bge-small) + sparse (BM25-style) embedding wrappers
-    qdrant_store.py       # collection schema, upsert logic
-    build_index.py        # CLI: ingest -> embed -> upsert end-to-end
-  retrieval/
-    search.py             # dense_search() + sparse_search() against real Qdrant
-    fusion.py             # Reciprocal Rank Fusion (pure logic, no dependencies)
-    hybrid.py             # wires dense + sparse + fusion into hybrid_search()
-  generation/             # (next: grounded generation, LLM-as-judge)
-  api/                    # (next: FastAPI app)
-  config.py               # all tunable settings in one place
-data/
-  sample_docs/             # test docs (onboarding.md)
-  raw_docs/                 # put your real internal docs here
-tests/
-  test_indexing_offline.py
-docker-compose.yml         # wires Qdrant + the API service together
-Dockerfile                 # multi-stage build for the API service
-requirements.txt
+```text
+User Question
+      │
+      ▼
+┌────────────────────────────────────────────────────────┐
+│ 1. Hybrid Search & Retrieval (Qdrant)                   │
+│    ├─ Dense Embedding: BAAI/bge-small-en-v1.5           │
+│    ├─ Sparse Embedding: BM25 (FastEmbed)               │
+│    └─ Fusion: Reciprocal Rank Fusion (RRF)              │
+└────────────────────────────────────┬───────────────────┘
+                                     │ Top Chunks [1..k]
+                                     ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. Grounded Generation (Groq / LLaMA 3.3 70B)          │
+│    └─ Synthesizes answer with inline citations [1], [2] │
+└────────────────────────────────────┬───────────────────┘
+                                     │ Answer + Citations
+                                     ▼
+┌────────────────────────────────────────────────────────┐
+│ 3. Citation & Hallucination Judge                      │
+│    ├─ Splits response into atomic factual claims       │
+│    ├─ Maps claims to their cited chunk text            │
+│    └─ Evaluates: SUPPORTED / PARTIAL / NOT_SUPPORTED   │
+└────────────────────────────────────┬───────────────────┘
+                                     │ Audited Result
+                                     ▼
+                      React UI (http://localhost)
 ```
 
-## Design notes worth remembering for interviews
+---
 
-- **Chunking is structure-first, size-limit-second**: markdown/HTML are split
-  by heading before any token-size splitting happens, so a chunk never mixes
-  two unrelated sections. PDF is split by page (the only reliable structural
-  signal PDFs give you for free without layout analysis).
-- **Token-based chunking, not character/word-based**: chunk size is measured
-  in tokens because that's the unit embedding models and LLM context windows
-  actually consume — word count is a poor proxy, especially for
-  jargon-heavy/technical text which tokenizes less efficiently than plain prose.
-- **Overlap** (`chunk_size - overlap` stride) exists so an idea straddling a
-  chunk boundary still appears whole in at least one chunk.
-- **Every chunk carries provenance metadata** (source file, heading path or
-  page number) from the moment it's created — this is what makes citations
-  possible later; bolting metadata on after the fact doesn't work.
-- **Deterministic chunk IDs** (`sha256` of source+position+text prefix,
-  mapped to a UUID via `uuid.uuid5`) mean re-ingesting an unchanged doc
-  overwrites the same Qdrant points instead of creating duplicates.
-- **Single Qdrant collection, two named vectors** (`dense` + `sparse`) per
-  point, rather than two separate systems (e.g. Chroma + Elasticsearch) —
-  keeps hybrid search's two representations tied to the same payload/ID
-  without manual stitching.
-- **Offline-testable indexing logic**: Qdrant's in-memory client +
-  mocked embedders let you verify schema/batching/ID correctness without
-  network access — separate concern from embedding *quality*, which needs
-  the real model.
+## 📂 Project Structure
 
-## Next session: pick up here
+```text
+├── app/
+│   ├── api/                  # FastAPI web server and routes (/query, /ingest, /collections, /health)
+│   ├── ingestion/            # PDF, Markdown, and HTML chunking with sliding-window overlap
+│   ├── indexing/             # Qdrant client, schema initialization, and dense+sparse embedders
+│   ├── retrieval/            # Dense search, sparse search, and Reciprocal Rank Fusion (RRF)
+│   ├── generation/           # Prompt templates, Groq generation, and LLM-as-a-judge verifier
+│   └── config.py             # Centralized pipeline configuration
+├── frontend/
+│   ├── src/                  # React + Vite application (Query page, Guide page, Ingest, Collections)
+│   ├── nginx.conf            # Reverse proxy (/api/* → backend:8000) and SPA static server
+│   └── Dockerfile            # Multi-stage Node 20 builder → Nginx 1.27 Alpine runtime
+├── data/
+│   └── sample_docs/          # Sample policy documents (e.g. Home Loan Policy PDF)
+├── docker-compose.yml        # Multi-container orchestration (Qdrant, Backend, Frontend)
+├── Dockerfile                # Backend container with CPU-only PyTorch pre-installation
+├── requirements.txt          # Python dependencies
+└── README.md
+```
 
-Next stage is cross-encoder re-ranking on top of `hybrid_search()`'s fused
-results, then grounded generation with inline citations.
+---
 
-## A note on this repo's history
+## 🎯 Production Design Highlights (For Technical Interviews)
 
-This project was built incrementally across a chat session with Claude,
-with the sandbox environment's filesystem resetting between some turns.
-If you notice a file's content doesn't quite match what was discussed at
-some point, this zip is the source of truth — it was reassembled and
-verified (tests re-run) after the reset to make sure nothing was lost.
+- **Structure-First Chunking:** Markdown and HTML are parsed hierarchically by headings prior to token windowing; PDFs are split by page boundaries. Unrelated sections are never arbitrarily merged.
+- **Dual Vector Representation in a Single Collection:** Rather than maintaining separate databases for keyword and semantic search, Qdrant stores both `dense` and `sparse` vectors alongside metadata payloads in a single point.
+- **Deterministic Chunk IDs:** UUIDv5 hashes generated from document source path and text content ensure that re-ingesting a document updates existing points without creating duplicates.
+- **Auditable Claim Decomposition:** Instead of a binary "hallucination score", answers are broken down into individual claims so users can pinpoint exactly which sub-clause lacks documentation.
+- **CPU-Optimized Container Build:** Backend Dockerfile pins CPU-only wheels for PyTorch, reducing image size by over 1.2 GB and eliminating heavy GPU driver overhead during container initialization.

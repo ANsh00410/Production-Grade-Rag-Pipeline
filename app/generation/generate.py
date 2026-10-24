@@ -33,7 +33,8 @@ def generate_answer(query: str, chunks: list[SearchResult]) -> str:
 
     response = client.chat.completions.create(
         model=settings.generation_model,
-        max_tokens=1024,
+        max_tokens=1500,
+        temperature=0,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_message},

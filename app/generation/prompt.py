@@ -28,6 +28,7 @@ Rules:
 - If a claim draws on multiple chunks, cite all of them, e.g. [1][3].
 - If the provided context does not contain enough information to answer the question, say so explicitly — do NOT use outside knowledge, and do NOT guess.
 - Do not fabricate citations. Only cite chunk numbers that actually appear in the context below.
+- Always write in plain prose sentences. Never use bullet points, numbered lists, or markdown formatting — only flowing sentences separated by periods.
 """
 
 

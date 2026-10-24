@@ -1,0 +1,15 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+frontend/node_modules/
+frontend/dist/
+.env
+.env.local
+qdrant_storage/
+tests/
+scratch*
+.vscode/
+.idea/

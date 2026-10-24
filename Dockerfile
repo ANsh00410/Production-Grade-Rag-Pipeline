@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# Pre-install CPU-only PyTorch so sentence-transformers doesn't pull heavy CUDA binaries
+RUN pip install --no-cache-dir --user torch --index-url https://download.pytorch.org/whl/cpu
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 

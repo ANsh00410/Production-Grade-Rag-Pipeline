@@ -36,3 +36,40 @@ def list_all_chunks():
 
 if __name__ == "__main__":
     list_all_chunks()
+
+
+# Here's the full trace:
+
+# 1. Source file
+
+
+# data/sample_docs/onboarding.md
+#  — the only doc you indexed. You can see in your earlier command output:
+
+# ✓ onboarding.md: 6 chunks
+# 2. Ingestion & chunking
+
+
+# app/indexing/build_index.py
+#  reads that file, parses it by Markdown headings, and splits it into 6 chunks using tiktoken (450 token max per chunk, 60 token overlap — set in 
+
+# config.py
+# ).
+
+# 3. Stored in Qdrant
+
+
+# app/indexing/qdrant_store.py → upsert_chunks()
+#  embeds each chunk as both a dense vector (bge-small, 384-dim) and a sparse vector (BM25-style), then upserts them into the internal_docs collection.
+
+# 4. list_all_chunks reads from Qdrant
+
+
+# tests/list_all_chunks.py
+#  calls client.scroll() on that collection — no search/ranking, just dumps every stored point raw.
+
+# So the 6 chunks you see are the 6 heading sections from onboarding.md. If you add more files to data/sample_docs/ and re-run:
+
+# powershell
+# python -m app.indexing.build_index data/sample_docs --recreate
+# ...those new docs will also show up in list_all_chunks.

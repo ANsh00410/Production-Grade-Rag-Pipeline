@@ -44,7 +44,7 @@ def ingest_directory(dir_path: str) -> list[Chunk]:
 
         chunks = ingest_file(str(file_path))
         all_chunks.extend(chunks)
-        print(f"  ✓ {file_path.name}: {len(chunks)} chunks")
+        print(f"  [OK] {file_path.name}: {len(chunks)} chunks")
 
     if skipped:
         print(f"  (skipped {len(skipped)} unsupported files: {[Path(s).name for s in skipped]})")

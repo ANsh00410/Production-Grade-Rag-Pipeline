@@ -48,17 +48,22 @@ def split_into_claims(answer_text: str, num_chunks: int) -> list[tuple[str, list
     Known limitation: splitting on ". " is a simple heuristic, not true
     sentence-boundary detection (it would mis-split on abbreviations like
     "e.g." or decimal numbers like "3.5"). Good enough for this project;
-    worth naming as a stated limitation rather than a silent gap if asked.
+    worth naming as a stated limitation rather than a silent gap if asked and always answer in plain prose sentences, never bullet lists.
     """
     normalized = _normalize_brackets(answer_text)
-    sentences = normalized.split(". ")
+    # Strip trailing period so the last sentence isn't lost when it ends
+    # with "...nil [7]." (no trailing space after the period)
+    sentences = normalized.strip().rstrip(".").split(". ")
 
     claims = []
     for sentence in sentences:
         if not sentence.strip():
-            continue  # guards against a stray empty segment (e.g. trailing ". ")
+            continue  # guards against a stray empty segment
 
-        clean_text = re.sub(r" ?(\[\d+\])+", ".", sentence).strip()
+        # Strip citation markers cleanly — no stray periods left behind
+        clean_text = re.sub(r"(\s*\[\d+\])+", "", sentence).strip()
+        if not clean_text:
+            continue
         citation_numbers = extract_citations(sentence, num_chunks)
         claims.append((clean_text, citation_numbers))
 
